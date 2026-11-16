@@ -1,6 +1,6 @@
 import {
   $, el, fill, api, applyTheme, iconNode, connectLive, toast, showError, showQr, modal, confirmDialog,
-  copyText, fmtTime, fmtDateTime, fmtNum, fmtRemaining, imageToDataUrl, TEAM_COLORS, PRESETS, debounce,
+  copyText, fmtTime, fmtDateTime, fmtNum, fmtRemaining, imageToDataUrl, TEAM_COLORS, PRESETS, debounce, auditTable,
 } from '/common.js';
 
 const token = location.pathname.split('/')[2];
@@ -12,6 +12,7 @@ const filters = {
   device: '', team: '', drink: '', from: '', to: '',
 };
 let entries = [];
+let auditRows = [];
 let designDraft = null;
 
 const TABS = [
@@ -20,6 +21,7 @@ const TABS = [
   ['drinks', 'Getränke'],
   ['design', 'Design'],
   ['log', 'Protokoll'],
+  ['audit', 'Audit'],
   ['export', 'Export'],
 ];
 
@@ -38,12 +40,23 @@ async function call(path, method, body, success) {
 async function load() {
   state = await api(`${base}/state`);
   if (tab === 'log') await loadEntries();
+  if (tab === 'audit') await loadAudit();
   render();
 }
 
 async function loadEntries() {
   const query = new URLSearchParams(Object.entries(filters).filter(([, v]) => v).map(([k, v]) => [k, k === 'from' || k === 'to' ? new Date(v).toISOString() : v]));
   ({ entries } = await api(`${base}/entries?${query}`));
+}
+
+async function loadAudit() {
+  ({ audit: auditRows } = await api(`${base}/audit`));
+}
+
+function auditTab() {
+  return el('div', { className: 'stack' },
+    el('p', { className: 'muted', text: 'Alle Aktionen bei diesem Fest: wer wann was gemacht hat – Buchungen, Stornos, Teams, Kassen und Einstellungen. Neueste zuerst.' }),
+    auditTable(auditRows));
 }
 
 const reload = debounce(() => load().catch(showError), 400);
@@ -93,7 +106,8 @@ function startTab() {
           checked: festival.theme.showPublicQr,
           onChange: (event) => call('/festival', 'PATCH', { theme: { showPublicQr: event.target.checked } }, event.target.checked ? 'Gäste-QR wird angezeigt' : 'Gäste-QR ausgeblendet'),
         }),
-        el('span', { text: 'Gäste-QR auf dem Public Screen anzeigen' }))),
+        el('span', { text: 'Gäste-QR auf dem Public Screen anzeigen' })),
+      festival.open && guestTeamsSwitch()),
     stats.recent.length > 0 && el('div', { className: 'card stack' },
       el('h2', { text: 'Zuletzt gebucht' }),
       el('ul', { className: 'recent' }, stats.recent.map((entry) => el('li', {},
@@ -223,6 +237,17 @@ function editTeam(team) {
     })), { wide: true });
 }
 
+function guestTeamsSwitch() {
+  return el('label', { className: 'switch card' },
+    el('input', {
+      type: 'checkbox',
+      checked: state.festival.theme.guestTeams,
+      onChange: (event) => call('/festival', 'PATCH', { theme: { guestTeams: event.target.checked } }, event.target.checked ? 'Gäste dürfen Teams gründen' : 'Gäste können nur noch Teams auswählen'),
+    }),
+    el('span', {}, 'Gäste dürfen eigene Teams gründen', el('br'),
+      el('span', { className: 'muted small', text: 'Aus: Gäste wählen nur ein bestehendes Team. Kassen und Veranstalter können weiterhin Teams anlegen.' })));
+}
+
 function teamsTab() {
   const open = state.festival.open;
   let color = TEAM_COLORS[state.allTeams.length % TEAM_COLORS.length];
@@ -240,13 +265,7 @@ function teamsTab() {
     el('h2', { text: 'Team hinzufügen' }),
     el('div', { className: 'row' }, el('div', { className: 'grow' }, name), el('button', { type: 'submit', className: 'btn primary', text: 'Hinzufügen' })),
     colorPicker(color, (c) => { color = c; })),
-    open && el('label', { className: 'switch card' },
-      el('input', {
-        type: 'checkbox',
-        checked: state.festival.theme.guestTeams,
-        onChange: (event) => call('/festival', 'PATCH', { theme: { guestTeams: event.target.checked } }, 'Gespeichert'),
-      }),
-      el('span', { text: 'Gäste dürfen eigene Teams gründen' })),
+    open && guestTeamsSwitch(),
     el('ul', { className: 'list' }, state.allTeams.map((team) => el('li', { className: `item${team.hidden ? ' is-hidden' : ''}` },
       el('i', { className: 'rank-swatch', style: { '--team': team.color } }),
       el('div', { className: 'title' }, team.name, team.hidden && el('span', { className: 'muted', text: ' (ausgeblendet)' })),
@@ -505,7 +524,7 @@ function exportTab() {
 // ---------- shell ----------
 
 const VIEWS = {
-  start: startTab, teams: teamsTab, drinks: drinksTab, design: designTab, log: logTab, export: exportTab,
+  start: startTab, teams: teamsTab, drinks: drinksTab, design: designTab, log: logTab, audit: auditTab, export: exportTab,
 };
 
 function render() {
@@ -530,6 +549,7 @@ function render() {
           tab = key;
           sessionStorage.setItem('dt-tab', key);
           if (key === 'log') await loadEntries().catch(showError);
+          if (key === 'audit') await loadAudit().catch(showError);
           render();
         },
       }))),

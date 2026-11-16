@@ -13,11 +13,18 @@ export async function addEntry(festival, device, body) {
     FROM team t, drink_type d
     WHERE t.id = $2 AND t.festival_id = $1 AND NOT t.hidden
       AND d.id = $3 AND d.festival_id = $1 AND NOT d.hidden
-    RETURNING id, qty, points, created_at`, [festival.id, body.teamId, body.drinkTypeId, device.id, qty]);
+    RETURNING id::text AS id, qty, points, created_at,
+      (SELECT name FROM team WHERE team.id = entry.team_id) AS team,
+      (SELECT name FROM drink_type WHERE drink_type.id = entry.drink_type_id) AS drink,
+      (SELECT emoji FROM drink_type WHERE drink_type.id = entry.drink_type_id) AS emoji`, [festival.id, body.teamId, body.drinkTypeId, device.id, qty]);
   if (!row) fail(404, 'Team oder Getränk nicht gefunden');
   await query('UPDATE festival SET last_activity_at = now() WHERE id = $1', [festival.id]);
   return row;
 }
+
+const UNDONE = `id::text AS id, qty,
+  (SELECT name FROM team WHERE team.id = entry.team_id) AS team,
+  (SELECT name FROM drink_type WHERE drink_type.id = entry.drink_type_id) AS drink`;
 
 export async function undoEntry(festival, id, { device, by }) {
   if (!/^\d{1,15}$/.test(String(id))) fail(404, 'Buchung nicht gefunden');
@@ -26,10 +33,10 @@ export async function undoEntry(festival, id, { device, by }) {
         UPDATE entry SET undone_at = now(), undone_by = $3
         WHERE id = $1 AND festival_id = $2 AND undone_at IS NULL AND device_id = $4
           AND created_at > now() - $5 * interval '1 millisecond'
-        RETURNING id`, [id, festival.id, by, device.id, UNDO_WINDOW_MS])
+        RETURNING ${UNDONE}`, [id, festival.id, by, device.id, UNDO_WINDOW_MS])
     : await one(`
         UPDATE entry SET undone_at = now(), undone_by = $3
-        WHERE id = $1 AND festival_id = $2 AND undone_at IS NULL RETURNING id`, [id, festival.id, by]);
+        WHERE id = $1 AND festival_id = $2 AND undone_at IS NULL RETURNING ${UNDONE}`, [id, festival.id, by]);
   if (!row) fail(404, device ? 'Buchung nicht gefunden oder zu alt zum Rückgängigmachen' : 'Buchung nicht gefunden oder schon storniert');
   await query('UPDATE festival SET last_activity_at = now() WHERE id = $1', [festival.id]);
   return row;

@@ -1,5 +1,5 @@
 import {
-  $, el, fill, api, showError, copyText, imageToDataUrl,
+  $, el, fill, api, showError, copyText, imageToDataUrl, iconNode, fmtRemaining,
 } from '/common.js';
 
 const EMOJIS = ['🚒', '🍺', '🎉', '🔥', '🚨', '🍻', '🎪', '🏆', '⛺', '🥳'];
@@ -24,7 +24,17 @@ function renderCreated(app, { manageUrl, name }) {
       el('a', { className: 'btn primary big block', href: manageUrl, text: 'Zur Verwaltung' }))));
 }
 
-function renderForm(app, creationEnabled) {
+function myFestivals(festivals) {
+  if (!festivals.length) return null;
+  return el('div', { className: 'card stack-sm' },
+    el('h2', { text: 'Hey, du bist Veranstalter' }),
+    el('ul', { className: 'list' }, festivals.map((f) => el('li', { className: 'item' },
+      iconNode(f),
+      el('div', { className: 'title' }, f.name, el('div', { className: 'meta', text: f.open ? `läuft noch ${fmtRemaining(f.expiresAt)}` : 'beendet' })),
+      el('a', { className: 'btn small primary', href: f.manageUrl, text: 'Verwaltung' })))));
+}
+
+function renderForm(app, creationEnabled, festivals = []) {
   let emoji = EMOJIS[0];
   let image = null;
 
@@ -115,13 +125,14 @@ function renderForm(app, creationEnabled) {
       el('img', { src: '/favicon.svg', alt: '' }),
       el('h1', { text: 'DrinkTracker' }),
       el('p', { text: 'Der Live-Getränkezähler für euer Fest: Kassen buchen per Handy oder Tablet, der Bildschirm zeigt das Ranking, Gäste verfolgen ihr Team am eigenen Handy.' })),
+    myFestivals(festivals),
     creationEnabled ? form : el('div', { className: 'card banner warn', text: 'Neue Feste können derzeit nicht angelegt werden.' })));
-  if (creationEnabled) name.focus();
+  if (creationEnabled && !festivals.length && !matchMedia('(pointer: coarse)').matches) name.focus();
 }
 
 const app = $('#app');
-api('/api/config')
-  .then(({ creationEnabled }) => renderForm(app, creationEnabled))
+Promise.all([api('/api/config'), api('/api/me/festivals').catch(() => ({ festivals: [] }))])
+  .then(([{ creationEnabled }, { festivals }]) => renderForm(app, creationEnabled, festivals))
   .catch((err) => {
     showError(err);
     renderForm(app, true);

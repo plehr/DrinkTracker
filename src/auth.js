@@ -1,6 +1,7 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { PUBLIC_URL, PUBLIC_ORIGIN, SECURE_COOKIES } from './config.js';
 import { cookies } from './http.js';
+import { audit, actor } from './audit.js';
 
 const ISSUER = process.env.OIDC_ISSUER?.replace(/\/$/, '');
 const CLIENT_ID = process.env.OIDC_CLIENT_ID;
@@ -109,6 +110,7 @@ export async function callback(req, res) {
   }
 
   const session = { sub: claims.sub, name: claims.name ?? claims.preferred_username ?? claims.email, exp: Date.now() + SESSION_MS };
+  await audit(null, actor.admin(req, session.name), 'admin.login');
   redirect(res, '/admin', [cookie(SESSION_COOKIE, sign(session), SESSION_MS), cookie(LOGIN_COOKIE, '', 0)]);
 }
 

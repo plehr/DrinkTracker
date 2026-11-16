@@ -12,6 +12,22 @@ export const PRESETS = [
 
 export const $ = (selector, root = document) => root.querySelector(selector);
 
+// iOS leaves the page shifted up after the keyboard closes when the page is shorter than the screen,
+// and it can't be scrolled back. Pull the scroll position back into the valid range.
+export function settleViewport() {
+  requestAnimationFrame(() => {
+    const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+    const shifted = (window.visualViewport?.offsetTop ?? 0) > 1 && window.visualViewport.height >= window.innerHeight - 1;
+    if (window.scrollY > max + 1 || shifted) window.scrollTo(0, Math.min(window.scrollY, max));
+  });
+}
+
+document.addEventListener('focusout', () => setTimeout(settleViewport, 50));
+new ResizeObserver(settleViewport).observe(document.documentElement);
+window.visualViewport?.addEventListener('resize', () => {
+  if (window.visualViewport.height >= window.innerHeight - 1) settleViewport();
+});
+
 export function fill(node, ...children) {
   node.replaceChildren(...children.flat(Infinity).filter((child) => child != null && child !== false));
   return node;
@@ -107,6 +123,7 @@ export function modal(title, content, { wide = false, onClose } = {}) {
     dialog.close();
     dialog.remove();
     onClose?.();
+    settleViewport();
   };
   dialog.append(
     el('div', { className: 'modal-head' },
@@ -224,6 +241,7 @@ function setFavicon(festival) {
 export function applyTheme(festival, target = document.body, { title = true } = {}) {
   const { theme } = festival;
   target.dataset.preset = theme.preset;
+  if (target === document.body) document.documentElement.dataset.preset = theme.preset;
   target.style.setProperty('--primary', theme.primary);
   target.style.setProperty('--accent', theme.accent);
   if (title) {
@@ -391,4 +409,84 @@ export function debounce(fn, ms) {
     clearTimeout(timer);
     timer = setTimeout(() => fn(...args), ms);
   };
+}
+
+// ---------- audit log ----------
+
+const AUDIT_ACTIONS = {
+  'festival.created': 'Fest angelegt',
+  'festival.updated': 'Fest geändert',
+  'festival.icon': 'Icon geändert',
+  'festival.closed': 'Fest beendet',
+  'festival.expired': 'Fest abgelaufen',
+  'festival.deleted': 'Fest gelöscht',
+  'team.created': 'Team angelegt',
+  'team.updated': 'Team geändert',
+  'team.deleted': 'Team gelöscht',
+  'team.merged': 'Teams zusammengeführt',
+  'team.owner_rotated': 'Owner-Link erneuert',
+  'team.owner_claimed': 'Owner-Zugang übernommen',
+  'drink.created': 'Getränk angelegt',
+  'drink.updated': 'Getränk geändert',
+  'drink.deleted': 'Getränk gelöscht',
+  'device.registered': 'Kasse registriert',
+  'device.renamed': 'Kasse umbenannt',
+  'counter.link_rotated': 'Kassen-Link erneuert',
+  'entry.booked': 'Getränk gebucht',
+  'entry.undone': 'Buchung zurückgenommen',
+  'entry.cancelled': 'Buchung storniert',
+  'team.joined': 'Team beigetreten',
+  'team.left': 'Team verlassen',
+  'settings.creation': 'Anlegen neuer Feste',
+  'admin.login': 'Admin-Anmeldung',
+};
+
+const FIELD_LABELS = {
+  name: 'Name', subtitle: 'Untertitel', preset: 'Hintergrund', primary: 'Primärfarbe', accent: 'Akzentfarbe',
+  barIcon: 'Balken-Symbol', showPublicQr: 'Gäste-QR', guestTeams: 'Gäste-Teams', color: 'Farbe', hidden: 'ausgeblendet',
+  emoji: 'Symbol', points: 'Punkte',
+};
+
+const fmtValue = (value) => {
+  if (value === true) return 'an';
+  if (value === false) return 'aus';
+  if (value === '' || value == null) return '–';
+  return String(value);
+};
+
+export const auditAction = (action) => AUDIT_ACTIONS[action] ?? action;
+
+export function auditDetails(row) {
+  const d = row.details ?? {};
+  const parts = [];
+  if (d.team) parts.push(`Team „${d.team}“`);
+  if (d.drink) parts.push(d.drink);
+  if (d.device) parts.push(`„${d.device}“`);
+  if (d.into) parts.push(`→ „${d.into}“`);
+  if (d.qty) parts.push(`${d.qty}×`);
+  if (d.entry) parts.push(`Buchung #${d.entry}`);
+  if (d.points !== undefined && typeof d.points !== 'object') parts.push(`${d.points} Punkte`);
+  if (typeof d.from === 'string') parts.push(`„${d.from}“ → „${d.to}“`);
+  if (d.enabled !== undefined) parts.push(d.enabled ? 'erlaubt' : 'gestoppt');
+  if (d.emoji !== undefined && typeof d.emoji !== 'object') parts.push(`Emoji ${fmtValue(d.emoji)}${d.image ? ', Bild' : ''}`);
+  for (const [key, change] of Object.entries(d)) {
+    if (change && typeof change === 'object' && 'from' in change) {
+      parts.push(`${FIELD_LABELS[key] ?? key}: ${fmtValue(change.from)} → ${fmtValue(change.to)}`);
+    }
+  }
+  return parts.join(' · ');
+}
+
+export function auditTable(rows, { withFestival = false, withIp = false } = {}) {
+  if (!rows.length) return el('p', { className: 'muted', text: 'Noch keine Einträge.' });
+  const headers = ['Zeit', withFestival && 'Fest', 'Wer', 'Aktion', 'Details', withIp && 'IP'].filter(Boolean);
+  return el('div', { className: 'table-wrap' }, el('table', { className: 'log' },
+    el('thead', {}, el('tr', {}, headers.map((h) => el('th', { text: h })))),
+    el('tbody', {}, rows.map((row) => el('tr', {},
+      el('td', { dataset: { label: 'Zeit' }, className: 'nowrap', text: fmtDateTime(row.at) }),
+      withFestival && el('td', { dataset: { label: 'Fest' }, text: row.festival ?? '–' }),
+      el('td', { dataset: { label: 'Wer' }, text: row.actor_label }),
+      el('td', { dataset: { label: 'Aktion' }, text: auditAction(row.action) }),
+      el('td', { dataset: { label: 'Details' }, text: auditDetails(row) || '–' }),
+      withIp && el('td', { dataset: { label: 'IP' }, className: 'small', text: row.ip ?? '–' }))))));
 }

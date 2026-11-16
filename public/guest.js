@@ -12,6 +12,19 @@ let me = { teamId: null, ownedTeamIds: [] };
 let canCreateTeam = false;
 let picking = false;
 let search = '';
+const viewerKey = `dt-viewer-${publicId}`;
+let viewer = false;
+try {
+  viewer = localStorage.getItem(viewerKey) === '1';
+} catch {}
+
+function setViewer(value) {
+  viewer = value;
+  try {
+    if (value) localStorage.setItem(viewerKey, '1');
+    else localStorage.removeItem(viewerKey);
+  } catch {}
+}
 
 const header = el('header', { className: 'topbar' });
 const body = el('main', { className: 'page page-narrow stack' });
@@ -25,6 +38,7 @@ if (params.has('owner')) history.replaceState(null, '', location.pathname);
 
 async function choose(teamId) {
   try {
+    setViewer(false);
     await api(`/api/p/${publicId}/me`, 'POST', { teamId });
     me = { ...me, teamId };
     picking = false;
@@ -132,8 +146,24 @@ function pickView() {
       el('h2', { text: 'Wähle dein Team' }),
       state.teams.length > 6 && input,
       list,
-      me.teamId && el('button', { type: 'button', className: 'btn secondary', text: 'Abbrechen', onClick: () => { picking = false; render(); } })),
+      el('button', {
+        type: 'button',
+        className: 'btn secondary',
+        text: me.teamId ? 'Abbrechen' : 'Nur Ranking ansehen',
+        onClick: () => {
+          if (!me.teamId) setViewer(true);
+          picking = false;
+          render();
+        },
+      })),
     canCreateTeam && createForm());
+}
+
+function managerBanner() {
+  if (!me.manageUrl) return null;
+  return el('div', { className: 'card row between' },
+    el('span', {}, 'Hey, du bist Veranstalter von ', el('b', { text: state.festival.name }), '!'),
+    el('a', { className: 'btn small primary', href: me.manageUrl, text: 'Zur Verwaltung' }));
 }
 
 function ownerBanner() {
@@ -194,11 +224,14 @@ function render() {
     el('div', { className: 'sub', text: festival.open ? (festival.theme.subtitle || 'Live-Ranking') : 'Das Fest ist beendet – Endstand' })));
 
   const known = me.teamId && state.teams.some((team) => team.id === me.teamId);
-  const showPicker = festival.open && (picking || !known);
+  const showPicker = festival.open && (picking || (!known && !viewer));
   fill(body, 
     !festival.open && el('div', { className: 'banner closed', text: 'Das Fest ist beendet. Danke fürs Mitmachen! 🍻' }),
+    managerBanner(),
     ownerBanner(),
-    showPicker ? pickView() : myTeamCard(),
+    showPicker ? pickView() : (known ? myTeamCard() : festival.open && el('div', { className: 'card row between' },
+      el('span', { className: 'muted', text: 'Du schaust nur zu.' }),
+      el('button', { type: 'button', className: 'btn small primary', text: 'Team wählen', onClick: () => { picking = true; render(); } }))),
     el('section', { className: 'stack-sm' },
       el('h2', { text: festival.open ? 'Ranking' : 'Endstand' }),
       state.teams.length ? rankingList : el('p', { className: 'muted', text: 'Noch keine Teams.' })),

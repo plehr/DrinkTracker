@@ -25,16 +25,28 @@ body, [data-preset] {
 
 body {
   margin: 0;
-  min-height: 100vh;
-  min-height: 100dvh;
   font-family: var(--font);
   color: var(--text);
-  background: var(--bg-solid);
-  background-image: var(--bg);
-  background-attachment: fixed;
+  background: transparent;
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
 }
+
+/* iOS ignores background-attachment: fixed; a fixed layer keeps the gradient behind the whole screen. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: var(--bg-solid);
+  background-image: var(--bg);
+  pointer-events: none;
+}
+
+html { background: #0f1440; }
+html[data-preset="nacht"] { background: #0f1115; }
+html[data-preset="feuer"] { background: #330804; }
+html[data-preset="hell"] { background: #f4f6fb; }
 
 [data-preset="nacht"] {
   --bg: linear-gradient(180deg, #111318 0%, #0b0c10 100%);
@@ -310,7 +322,7 @@ input[type="color"] {
 }
 
 body:not([data-preset="hell"]) .modal { background: #161a2b; }
-.modal-wide { width: min(640px, calc(100% - 24px)); }
+.modal-wide { width: min(900px, calc(100% - 24px)); }
 .modal::backdrop { background: rgba(0, 0, 0, .6); backdrop-filter: blur(3px); }
 .modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 12px 0 20px; }
 .modal-head h2 { font-size: 1.15rem; }
@@ -695,7 +707,7 @@ body:not([data-preset="hell"]) .modal { background: #161a2b; }
 .podium .pts { color: var(--muted); font-size: clamp(.9rem, 1.4vw, 1.4rem); }
 
 @media (max-width: 900px), (orientation: portrait) {
-  .screen { height: auto; min-height: 100dvh; overflow: visible; }
+  .screen { height: auto; overflow: visible; }
   .screen-main { grid-template-columns: 1fr; }
   .board { overflow: visible; }
   .board-row { --h: clamp(48px, 7vh, 80px); grid-template-columns: calc(var(--h) * .8) minmax(0, 1fr) auto; }
@@ -725,6 +737,7 @@ body:not([data-preset="hell"]) .modal { background: #161a2b; }
     color: #000;
   }
   .no-print, .live-indicator, .toasts { display: none !important; }
+  body::before { display: none; }
   .page { max-width: none; padding: 0; }
   .card { backdrop-filter: none; border: 0; padding: 0; }
   .report section { break-inside: auto; }

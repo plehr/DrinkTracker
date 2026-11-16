@@ -74,5 +74,19 @@ export async function migrate() {
     );
     CREATE INDEX IF NOT EXISTS entry_festival ON entry (festival_id, created_at);
     CREATE INDEX IF NOT EXISTS entry_team ON entry (team_id);
+
+    CREATE TABLE IF NOT EXISTS audit_log (
+      id            bigserial PRIMARY KEY,
+      festival_id   uuid REFERENCES festival ON DELETE CASCADE,
+      festival_name text,
+      at            timestamptz NOT NULL DEFAULT now(),
+      actor_type    text NOT NULL,
+      actor_label   text NOT NULL,
+      ip            text,
+      action        text NOT NULL,
+      details       jsonb NOT NULL DEFAULT '{}'
+    );
+    CREATE INDEX IF NOT EXISTS audit_festival ON audit_log (festival_id, at DESC);
+    CREATE INDEX IF NOT EXISTS audit_at ON audit_log (at DESC);
   `);
 }

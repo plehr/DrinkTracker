@@ -1,5 +1,5 @@
 import {
-  $, el, fill, api, iconNode, showError, toast, confirmDialog, copyText, modal, fmtDateTime, fmtNum, fmtRemaining, fmtTime,
+  $, el, fill, api, iconNode, showError, toast, confirmDialog, copyText, modal, fmtDateTime, fmtNum, fmtRemaining, fmtTime, auditTable,
 } from '/common.js';
 
 const REFRESH_MS = 10_000;
@@ -62,8 +62,12 @@ const table = (headers, rows, numeric = []) => el('div', { className: 'table-wra
 
 async function showDetails(f) {
   let details;
+  let auditRows;
   try {
-    details = await api(`/admin/api/festivals/${f.id}`);
+    [details, { audit: auditRows }] = await Promise.all([
+      api(`/admin/api/festivals/${f.id}`),
+      api(`/admin/api/audit?festival=${f.id}`),
+    ]);
   } catch (err) {
     showError(err);
     return;
@@ -104,6 +108,8 @@ async function showDetails(f) {
       el('span', { text: entry.drink_emoji || '🥤' }),
       el('span', { className: 'grow' }, `${entry.qty}× ${entry.drink} · `, el('b', { text: entry.team })),
       el('span', { className: 'muted small', text: fmtTime(entry.created_at) })))),
+    el('h3', { text: 'Audit-Log' }),
+    auditTable(auditRows, { withIp: true }),
     el('h3', { text: 'Links' }),
     el('div', { className: 'row' }, linkButtons(f.links))), { wide: true });
 }
@@ -173,6 +179,19 @@ function render() {
     el('header', { className: 'topbar' },
       el('img', { className: 'fest-icon', src: '/favicon.svg', alt: '' }),
       el('div', { className: 'grow' }, el('h1', { text: 'DrinkTracker Admin' }), el('div', { className: 'sub', text: `angemeldet als ${data.user} · aktualisiert ${fmtTime(new Date().toISOString())}` })),
+      el('button', {
+        type: 'button',
+        className: 'btn small secondary',
+        text: 'Audit-Log',
+        onClick: async () => {
+          try {
+            const { audit: rows } = await api('/admin/api/audit?limit=1000');
+            modal('Audit-Log (alle Feste)', auditTable(rows, { withFestival: true, withIp: true }), { wide: true });
+          } catch (err) {
+            showError(err);
+          }
+        },
+      }),
       el('button', {
         type: 'button',
         className: 'btn small secondary',
