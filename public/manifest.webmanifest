@@ -1,0 +1,13 @@
+{
+  "name": "DrinkTracker",
+  "short_name": "DrinkTracker",
+  "description": "Live-Getränkezähler für Feste",
+  "display": "standalone",
+  "background_color": "#0f1440",
+  "theme_color": "#0f1440",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "/icon-128.png", "sizes": "128x128", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
