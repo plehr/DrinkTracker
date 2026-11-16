@@ -544,6 +544,7 @@ try {
     onState: () => reload(),
     onRefresh: load,
     onDeleted: () => location.reload(),
+    role: 'manage',
   });
 } catch (err) {
   showError(err);

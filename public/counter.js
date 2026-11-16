@@ -37,7 +37,7 @@ function registerView() {
         submit.disabled = true;
         try {
           await api(`${base}/device`, 'POST', { name: name.value });
-          await load();
+          location.reload();
         } catch (err) {
           showError(err);
           submit.disabled = false;
@@ -248,6 +248,7 @@ try {
     onState: () => reload(),
     onRefresh: load,
     onDeleted: () => location.reload(),
+    role: 'counter',
   });
 } catch (err) {
   showError(err);

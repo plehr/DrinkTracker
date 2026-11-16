@@ -19,13 +19,14 @@ import {
   drinkById, createDrink, updateDrink, deleteDrink,
 } from './drinks.js';
 import { publicState, ownerStats } from './stats.js';
-import { changed } from './live.js';
+import { changed, presence } from './live.js';
 import { sendPushover } from './notify.js';
 import { query } from './db.js';
 import {
   authEnabled, getSession, login, callback, logout,
 } from './auth.js';
 import { TOKEN_RE } from './tokens.js';
+import { forwardPage } from './pages.js';
 
 const routes = [];
 const on = (method, pattern, handler) => routes.push({ method, pattern: new RegExp(`^${pattern}$`), handler });
@@ -169,8 +170,10 @@ on('GET', `/p/${ID}/o/${ID}`, async (req, res, [publicId, token]) => {
   }
   addOwnerToken(req, res, festival, token);
   setCookie(res, teamCookie(festival), team.id, cookieAge(festival));
-  res.writeHead(302, { Location: `/p/${publicId}?owner=1`, 'Cache-Control': 'no-store' });
-  return res.end();
+  return forwardPage(res, `/p/${publicId}?owner=1`, {
+    title: `Owner-Zugang: ${team.name}`,
+    description: `Du wirst Team-Owner von „${team.name}“ bei ${festival.name} und kannst den Teamnamen ändern. Nur an Teammitglieder weitergeben.`,
+  });
 });
 
 // ---------- counters ----------
@@ -459,27 +462,76 @@ if (authEnabled) {
 }
 
 if (adminEnabled) {
+  const EMPTY_LIVE = {
+    total: 0, guest: 0, screen: 0, manage: 0, counter: 0, counters: [],
+  };
+
+  const adminFestival = (f, live, devices) => {
+    const online = new Set(live.counters.map((device) => device.id));
+    return {
+      id: f.id,
+      name: f.name,
+      publicId: f.public_id,
+      subtitle: f.theme?.subtitle ?? '',
+      iconEmoji: f.icon_emoji,
+      iconUrl: f.icon_mime ? `/i/${f.public_id}?v=${f.icon_version}` : null,
+      open: isOpen(f),
+      createdAt: f.created_at,
+      expiresAt: f.expires_at,
+      closedAt: f.closed_at,
+      lastActivityAt: f.last_activity_at,
+      creatorIp: f.creator_ip,
+      teams: f.team_count,
+      guestTeams: f.guest_team_count,
+      devices: f.device_count,
+      drinks: f.drink_count,
+      points: f.point_count,
+      bookings: f.booking_count,
+      live,
+      counters: devices.map((device) => ({ ...device, online: online.has(device.id) })),
+      links: links(f),
+    };
+  };
+
   on('GET', '/admin/api/festivals', async (req, res) => {
     requireAdmin(req);
-    const festivals = await listFestivals();
+    const [festivals, { rows: devices }] = await Promise.all([
+      listFestivals(),
+      query(`
+        SELECT d.festival_id, d.id, d.name, d.created_at, d.last_seen_at,
+          coalesce(sum(e.qty) FILTER (WHERE e.undone_at IS NULL), 0)::int AS drinks,
+          count(e.id) FILTER (WHERE e.undone_at IS NULL)::int AS bookings,
+          max(e.created_at) AS last_booking_at
+        FROM device d LEFT JOIN entry e ON e.device_id = d.id
+        GROUP BY d.id ORDER BY d.created_at`),
+    ]);
+    const live = presence();
+    const byFestival = new Map();
+    for (const { festival_id: festivalId, ...device } of devices) {
+      if (!byFestival.has(festivalId)) byFestival.set(festivalId, []);
+      byFestival.get(festivalId).push(device);
+    }
+    const list = festivals.map((f) => adminFestival(f, live.get(f.id) ?? EMPTY_LIVE, byFestival.get(f.id) ?? []));
+    const running = list.filter((f) => f.open);
     sendNoStore(res, 200, {
       user: DEV_ADMIN ? 'dev' : getSession(req).name,
-      festivals: festivals.map((f) => ({
-        id: f.id,
-        name: f.name,
-        iconEmoji: f.icon_emoji,
-        iconUrl: f.icon_mime ? `/i/${f.public_id}?v=${f.icon_version}` : null,
-        open: isOpen(f),
-        createdAt: f.created_at,
-        expiresAt: f.expires_at,
-        closedAt: f.closed_at,
-        lastActivityAt: f.last_activity_at,
-        teams: f.team_count,
-        devices: f.device_count,
-        drinks: f.drink_count,
-        links: links(f),
-      })),
+      summary: {
+        festivals: list.length,
+        running: running.length,
+        connected: list.reduce((sum, f) => sum + f.live.total, 0),
+        guests: list.reduce((sum, f) => sum + f.live.guest, 0),
+        countersOnline: list.reduce((sum, f) => sum + f.live.counters.length, 0),
+        drinksRunning: running.reduce((sum, f) => sum + f.drinks, 0),
+      },
+      festivals: list,
     });
+  });
+
+  on('GET', `/admin/api/festivals/${ID}`, async (req, res, [id]) => {
+    requireAdmin(req);
+    const festival = await need(byId(id), 'Fest nicht gefunden');
+    const state = await manageState(festival);
+    sendNoStore(res, 200, { ...state, live: presence().get(festival.id) ?? EMPTY_LIVE });
   });
 
   on('POST', `/admin/api/festivals/${ID}/close`, async (req, res, [id]) => {
@@ -510,13 +562,4 @@ if (adminEnabled) {
     await setSetting('creation_enabled', creationEnabled);
     sendNoStore(res, 200, { creationEnabled });
   });
-}
-
-// ---------- page guards ----------
-
-export async function pageAllowed(kind, value) {
-  if (kind === 'm') return Boolean(await byManageToken(value));
-  if (kind === 't') return Boolean(await byCounterToken(value));
-  if (kind === 'p') return Boolean(await byPublicId(value));
-  return false;
 }

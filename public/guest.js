@@ -3,7 +3,9 @@ import {
   animateList, debounce,
 } from '/common.js';
 
-const publicId = location.pathname.split('/')[2];
+const [, , publicId, linkKind, linkTeamId] = location.pathname.split('/');
+const invitedTeamId = linkKind === 'team' ? linkTeamId : null;
+if (invitedTeamId) history.replaceState(null, '', `/p/${publicId}`);
 const app = $('#app');
 let state;
 let me = { teamId: null, ownedTeamIds: [] };
@@ -51,6 +53,20 @@ async function ownerQr(team) {
   } catch (err) {
     showError(err);
   }
+}
+
+async function shareTeam(team) {
+  const url = `${location.origin}/p/${publicId}/team/${team.id}`;
+  const text = `Mach mit bei Team „${team.name}“ – ${state.festival.name}`;
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: team.name, text, url });
+      return;
+    } catch (err) {
+      if (err.name === 'AbortError') return;
+    }
+  }
+  showQr(`Team teilen: ${team.name}`, url, 'Wer diesen Link öffnet, landet direkt bei eurem Team.');
 }
 
 function createForm() {
@@ -149,7 +165,9 @@ function myTeamCard() {
         ? el('p', { text: behind ? `🏆 Ihr führt mit ${fmtNum(behind.diff)} Punkten Vorsprung!` : '🏆 Ihr seid ganz vorne!' })
         : ahead && el('p', { text: `Noch ${fmtNum(ahead.diff)} Punkte bis Platz ${ahead.team.rank} (${ahead.team.name})` }),
       behind && team.rank !== 1 && el('p', { className: 'muted', text: `${fmtNum(behind.diff)} Punkte Vorsprung auf ${behind.team.name}` })),
-    open && el('button', { type: 'button', className: 'btn small secondary', text: 'Team wechseln', onClick: () => { picking = true; render(); } }));
+    el('div', { className: 'row', style: { 'justify-content': 'center', 'margin-top': '12px' } },
+      el('button', { type: 'button', className: 'btn small secondary', text: 'Team teilen', onClick: () => shareTeam(team) }),
+      open && el('button', { type: 'button', className: 'btn small secondary', text: 'Team wechseln', onClick: () => { picking = true; render(); } })));
 }
 
 function renderRanking() {
@@ -197,8 +215,21 @@ async function load() {
 
 const reloadSoon = debounce(() => load().catch(() => {}), 300);
 
+async function acceptInvite() {
+  if (!invitedTeamId || !state.festival.open) return;
+  const team = state.teams.find((row) => row.id === invitedTeamId);
+  if (!team || me.teamId === team.id) return;
+  if (!me.teamId) {
+    await choose(team.id);
+    toast(`Willkommen bei Team „${team.name}“ 🍻`, { type: 'success' });
+    return;
+  }
+  toast(`Du bist eingeladen zu „${team.name}“`, { action: 'Wechseln', timeout: 10_000, onAction: () => choose(team.id) });
+}
+
 try {
   await load();
+  await acceptInvite();
   connectLive(publicId, {
     onState: (next) => {
       state = { ...state, ...next };

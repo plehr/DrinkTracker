@@ -731,3 +731,11 @@ body:not([data-preset="hell"]) .modal { background: #161a2b; }
   .report thead { display: table-header-group; }
   .report tr { break-inside: avoid; }
 }
+
+/* ---------- admin ---------- */
+
+.presence { flex: none; width: 10px; height: 10px; background: var(--muted); border-radius: 50%; opacity: .5; }
+.presence.on { background: var(--ok); opacity: 1; box-shadow: 0 0 0 3px rgba(46, 204, 113, .25); }
+details > summary { min-height: 36px; padding: 6px 0; cursor: pointer; font-size: .9rem; font-weight: 600; }
+.table-wrap { overflow-x: auto; }
+.log td.num { text-align: right; font-variant-numeric: tabular-nums; }

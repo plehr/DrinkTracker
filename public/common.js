@@ -295,7 +295,9 @@ export function animateList(container, render) {
 const COOLDOWN_MS = 30_000;
 const STALE_MS = 40_000;
 
-export function connectLive(publicId, { onState, onRefresh, onDeleted }) {
+export function connectLive(publicId, {
+  onState, onRefresh, onDeleted, role = 'guest',
+}) {
   const indicator = el('div', { className: 'live-indicator' });
   const dot = el('span', { className: 'live-dot', title: 'Live verbunden', 'aria-label': 'Live verbunden' });
   const button = el('button', {
@@ -331,7 +333,7 @@ export function connectLive(publicId, { onState, onRefresh, onDeleted }) {
     clearTimeout(retryTimer);
     if (ws && ws.readyState <= 1) return;
     const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
-    ws = new WebSocket(`${scheme}://${location.host}/ws?p=${encodeURIComponent(publicId)}`);
+    ws = new WebSocket(`${scheme}://${location.host}/ws?p=${encodeURIComponent(publicId)}&r=${role}`);
     ws.addEventListener('open', () => {
       connected = true;
       retry = 1000;

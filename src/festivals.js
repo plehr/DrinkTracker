@@ -148,8 +148,11 @@ export async function listFestivals() {
   const { rows } = await query(`
     SELECT f.*,
       (SELECT count(*) FROM team t WHERE t.festival_id = f.id)::int AS team_count,
+      (SELECT count(*) FROM team t WHERE t.festival_id = f.id AND t.created_by = 'guest')::int AS guest_team_count,
       (SELECT count(*) FROM device d WHERE d.festival_id = f.id)::int AS device_count,
-      (SELECT coalesce(sum(e.qty), 0) FROM entry e WHERE e.festival_id = f.id AND e.undone_at IS NULL)::int AS drink_count
+      (SELECT coalesce(sum(e.qty), 0) FROM entry e WHERE e.festival_id = f.id AND e.undone_at IS NULL)::int AS drink_count,
+      (SELECT coalesce(sum(e.points), 0) FROM entry e WHERE e.festival_id = f.id AND e.undone_at IS NULL)::int AS point_count,
+      (SELECT count(*) FROM entry e WHERE e.festival_id = f.id AND e.undone_at IS NULL)::int AS booking_count
     FROM festival f ORDER BY f.created_at DESC`);
   return rows;
 }

@@ -3,12 +3,15 @@ import { WebSocketServer } from 'ws';
 import { query } from './db.js';
 import { PUBLIC_ORIGIN } from './config.js';
 import { byId, byPublicId } from './festivals.js';
+import { deviceById } from './devices.js';
+import { cookies } from './http.js';
 import { publicState } from './stats.js';
 
 const CHANNEL = 'festival_events';
 const PING_MS = 15_000;
 const DEBOUNCE_MS = 250;
 const MAX_CLIENTS = 5000;
+const ROLES = new Set(['guest', 'screen', 'manage', 'counter']);
 
 const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 });
 const subscribers = new Map();
@@ -69,6 +72,25 @@ async function listen() {
   }
 }
 
+// Connected clients of this replica per festival. The role is what the page says it is (only shown to
+// admins); counters are identified by their device cookie.
+export function presence() {
+  const out = new Map();
+  for (const [festivalId, sockets] of subscribers) {
+    const entry = { total: 0, guest: 0, screen: 0, manage: 0, counter: 0, counters: [] };
+    const devices = new Map();
+    for (const ws of sockets) {
+      if (ws.readyState !== ws.OPEN) continue;
+      entry.total++;
+      entry[ws.role]++;
+      if (ws.device) devices.set(ws.device.id, { ...ws.device, connections: (devices.get(ws.device.id)?.connections ?? 0) + 1 });
+    }
+    entry.counters = [...devices.values()];
+    out.set(festivalId, entry);
+  }
+  return out;
+}
+
 export function attachLive(server) {
   listen();
 
@@ -86,9 +108,13 @@ export function attachLive(server) {
         socket.destroy();
         return;
       }
+      const role = ROLES.has(url.searchParams.get('r')) ? url.searchParams.get('r') : 'guest';
+      const device = role === 'counter' ? await deviceById(festival, cookies(req)[`dt_dev_${festival.public_id}`]) : null;
       wss.handleUpgrade(req, socket, head, async (ws) => {
         clientCount++;
         ws.alive = true;
+        ws.role = role;
+        ws.device = device && { id: device.id, name: device.name };
         if (!subscribers.has(festival.id)) subscribers.set(festival.id, new Set());
         subscribers.get(festival.id).add(ws);
         ws.on('pong', () => { ws.alive = true; });

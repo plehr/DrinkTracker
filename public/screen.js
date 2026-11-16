@@ -134,6 +134,7 @@ try {
     onState: render,
     onRefresh: load,
     onDeleted: () => location.reload(),
+    role: 'screen',
   });
 } catch (err) {
   showError(err);
